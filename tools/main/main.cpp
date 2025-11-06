@@ -143,6 +143,24 @@ int main(int argc, char ** argv) {
     // Initialize FPGA host (non-fatal). Reads configuration from environment
     // variables so we don't need to rebuild when moving between PC and ZCU106.
     // Environment variables (optional): FPGA_XCLBIN, FPGA_KERNEL
+    // =============================== UP DATE DUONG DAN THEO SET ENVIROMENT VARIABLE =============
+    /*
+            # Build without FPGA (stubs only - to verify syntax)
+        cmake -S . -B build_ver2 -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        cmake --build build_ver2 --target llama-cli -j
+
+        # Build with FPGA support (on ZCU106 or cross-compile env)  
+        cmake -S . -B build_ver2 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_FPGA=ON
+        cmake --build build_ver2 --target llama-cli -j
+
+        # Run (example - adjust paths)
+        $env:FPGA_XCLBIN="/path/to/kernal_forward.xclbin" 
+        $env:FPGA_KERNEL="KERNAL_FORWARD_0"
+        ./build_ver2/bin/llama-cli -m model.gguf -p "test"
+    */
+
+
+    /*
     {
         const char *env_xclbin = std::getenv("FPGA_XCLBIN");
         const char *env_kernel = std::getenv("FPGA_KERNEL");
@@ -156,6 +174,24 @@ int main(int argc, char ** argv) {
             LOG_WRN("%s: FPGA host init failed or not enabled: %s\n", __func__, fpga_err.c_str());
         }
     }
+  */ 
+   // Initialize FPGA host (non-fatal)
+   //============================= UPDATE TEN KERNAL TRUC TIEP ===================
+    {
+        // Fixed paths for FPGA bitstream and kernel
+        std::string xclbin_path = "/lib/firmware/kernal_forward.xclbin";  // <-- Thay đường dẫn này
+        std::string kernel_name = "KERNAL_FORWARD_0";  // <-- Đã sửa tên kernel theo Vivado
+
+        std::string fpga_err;
+        if (fpga_host_init(xclbin_path, kernel_name, fpga_err)) {
+            LOG_INF("%s: FPGA host initialized: xclbin=%s kernel=%s\n", __func__, xclbin_path.c_str(), kernel_name.c_str());
+        } else {
+            LOG_WRN("%s: FPGA host init failed or not enabled: %s\n", __func__, fpga_err.c_str());
+        }
+    }
+
+
+
 
     common_init_result llama_init = common_init_from_params(params);
 
