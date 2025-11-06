@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "fpga_host.h"
+
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <signal.h>
 #include <unistd.h>
@@ -137,6 +139,24 @@ int main(int argc, char ** argv) {
 
     // load the model and apply lora adapter, if any
     LOG_INF("%s: load the model and apply lora adapter, if any\n", __func__);
+
+    // Initialize FPGA host (non-fatal). Reads configuration from environment
+    // variables so we don't need to rebuild when moving between PC and ZCU106.
+    // Environment variables (optional): FPGA_XCLBIN, FPGA_KERNEL
+    {
+        const char *env_xclbin = std::getenv("FPGA_XCLBIN");
+        const char *env_kernel = std::getenv("FPGA_KERNEL");
+        std::string xclbin_path = env_xclbin ? env_xclbin : "/lib/firmware/kernal_forward.xclbin";
+        std::string kernel_name = env_kernel ? env_kernel : "KERNAL_FORWARD";
+
+        std::string fpga_err;
+        if (fpga_host_init(xclbin_path, kernel_name, fpga_err)) {
+            LOG_INF("%s: FPGA host initialized: xclbin=%s kernel=%s\n", __func__, xclbin_path.c_str(), kernel_name.c_str());
+        } else {
+            LOG_WRN("%s: FPGA host init failed or not enabled: %s\n", __func__, fpga_err.c_str());
+        }
+    }
+
     common_init_result llama_init = common_init_from_params(params);
 
     model = llama_init.model.get();
