@@ -26,4 +26,10 @@ bool fpga_bo_read(int idx, void * dst, size_t nbytes);
 // Run the matmul kernel using BO indices. Returns true on success.
 bool fpga_run_matmul(int bo_A, int bo_B, int bo_C, int M, int K, int N);
 
+// ================ TASk3================
+// map giữa tên tensor và BO index
+void fpga_register_tensor_bo(const std::string &name, int bo_idx);
+
+// Lấy BO index từ tên tensor 
+int fpga_get_bo_idx_for_name(const std::string &name);
 #endif // FPGA_HOST_H

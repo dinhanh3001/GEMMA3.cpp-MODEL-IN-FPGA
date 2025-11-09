@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <unordered_map> 
 
 #ifdef USE_FPGA
 #include <xrt/xrt_device.h>
@@ -54,9 +55,15 @@ static xrt::uuid g_uuid;
 static std::unique_ptr<xrt::kernel> g_kernel;
 static std::vector<std::unique_ptr<xrt::bo>> g_bos;
 static bool g_ready = false;
+// --- THÊM CHO TASK 3 ---
+// Map để lưu trữ tên tensor -> BO index
+static std::unordered_map<std::string, int> g_tensor_to_bo_idx;
+// --- KẾT THÚC THÊM ---
+
 #else
 static bool g_ready = false;
 static std::vector<int> g_bos_dummy; // indexes only for stubs
+static std::unordered_map<std::string, int> g_tensor_to_bo_idx; // Thêm cả stub
 #endif
 
 bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_name, std::string &err) {
@@ -67,6 +74,7 @@ bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_na
         g_uuid = g_device->load_xclbin(xclbin_path);
         g_kernel = std::make_unique<xrt::kernel>(*g_device, g_uuid, kernel_name);
         g_bos.clear();
+        g_tensor_to_bo_idx.clear(); // Xóa map cũ khi init
         g_ready = true;
         return true;
     } catch (const std::exception &e) {
@@ -87,11 +95,13 @@ bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_na
 void fpga_host_shutdown() {
     std::lock_guard<std::mutex> lk(g_fpga_mutex);
 #ifdef USE_FPGA
+    g_tensor_to_bo_idx.clear();  // xoa map cu khi init 
     g_bos.clear();
     g_kernel.reset();
     g_device.reset();
     g_ready = false;
 #else
+    g_tensor_to_bo_idx.clear();
     g_bos_dummy.clear();
     g_ready = false;
 #endif
@@ -176,3 +186,18 @@ bool fpga_run_matmul(int bo_A, int bo_B, int bo_C, int M, int K, int N) {
     return false;
 #endif
 }
+// --- THÊM CHO TASK 3 ---
+void fpga_register_tensor_bo(const std::string &name, int bo_idx) {
+    std::lock_guard<std::mutex> lk(g_fpga_mutex);
+    g_tensor_to_bo_idx[name] = bo_idx;
+}
+
+int fpga_get_bo_idx_for_name(const std::string &name) {
+    std::lock_guard<std::mutex> lk(g_fpga_mutex);
+    auto it = g_tensor_to_bo_idx.find(name);
+    if (it != g_tensor_to_bo_idx.end()) {
+        return it->second;
+    }
+    return -1; // Không tìm thấy
+}
+// --- KẾT THÚC THÊM ---
