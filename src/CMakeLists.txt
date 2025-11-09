@@ -56,7 +56,7 @@ endif()
 
 if (USE_FPGA)
    # 1. Thêm source file FPGA chỉ khi bật option
-    target_sources(llama PRIVATE fpga_host.cpp fpga_host.h)
+    target_sources(llama PRIVATE fpga_host.cpp fpga_host.h) # -> co the xoa duoc 
     # try to locate XRT headers and library
     find_path(XRT_INCLUDE_DIR NAMES xrt/xrt_device.h HINTS /opt/xilinx/xrt/include /usr/include)
     find_library(XRT_LIB NAMES xrt_core xrt_coreutil xrt HINTS /opt/xilinx/xrt/lib /usr/lib)
