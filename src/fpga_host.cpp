@@ -16,18 +16,31 @@
 #include <xrt/xrt_kernel.h>
 #include <xrt/xrt_bo.h>
 
-// HP0 memory segment addresses from Vivado design
-constexpr uint64_t HP0_DDR_HIGH_BASE = 0x0000'0008'0000ULL;  // 32G
-constexpr uint64_t HP0_DDR_LOW_BASE  = 0x0000'0000'0000ULL;  // 2G
-constexpr uint64_t HP0_QSPI_BASE     = 0x0000'0000'C000ULL;  // 512M
-constexpr uint64_t CONTROL_REG_BASE   = 0x00A0'0000'0000ULL; // 64K
+// HP0 memory segment addresses from Vivado design for ZCU102 (full 64-bit values)
+// Values derived from the Address Editor in your Vivado export (ZCU102):
+//  - HP0_DDR_LOW  : 0x0000_0000_0000_0000 (low DDR window)
+//  - HP0_QSPI     : 0x0000_0000_C000_0000 (QSPI mapping, 512M)
+//  - HP0_PCIE_LOW : 0x0000_0000_E000_0000 (PCIE low region, 256M)
+//  - HP0_DDR_HIGH : 0x0000_0008_0000_0000 (upper DDR mapping, 32G)
+//  - CONTROL_REG_BASE: 0x0000_0000_A000_0000 (PS register region used by design)
+constexpr uint64_t HP0_DDR_HIGH_BASE = 0x0000000800000000ULL; // 0x0000_0008_0000_0000
+constexpr uint64_t HP0_DDR_LOW_BASE  = 0x0000000000000000ULL; // 0x0000_0000_0000_0000
+constexpr uint64_t HP0_QSPI_BASE     = 0x00000000C0000000ULL; // 0x0000_0000_C000_0000
+constexpr uint64_t HP0_PCIE_LOW_BASE = 0x00000000E0000000ULL; // 0x0000_0000_E000_0000
+constexpr uint64_t CONTROL_REG_BASE  = 0x00000000A0000000ULL; // 0x0000_0000_A000_0000 (64K region)
 
 // Map bank ID to physical base address for HP0 segments
 uint64_t get_bank_base(int bank) {
     switch(bank) {
+        // Bank mapping (choose according to how you assigned slave segments in Vivado):
+        // 0 -> HP0_DDR_HIGH
+        // 1 -> HP0_DDR_LOW
+        // 2 -> HP0_QSPI
+        // 3 -> HP0_PCIE_LOW
         case 0: return HP0_DDR_HIGH_BASE; // Default high memory
         case 1: return HP0_DDR_LOW_BASE;  // Low memory region
         case 2: return HP0_QSPI_BASE;     // QSPI region
+        case 3: return HP0_PCIE_LOW_BASE; // PCIE low region
         default: return HP0_DDR_HIGH_BASE;
     }
 }
