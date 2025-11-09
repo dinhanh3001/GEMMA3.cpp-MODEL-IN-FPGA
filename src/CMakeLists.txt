@@ -55,6 +55,8 @@ if (BUILD_SHARED_LIBS)
 endif()
 
 if (USE_FPGA)
+   # 1. Thêm source file FPGA chỉ khi bật option
+    target_sources(llama PRIVATE fpga_host.cpp fpga_host.h)
     # try to locate XRT headers and library
     find_path(XRT_INCLUDE_DIR NAMES xrt/xrt_device.h HINTS /opt/xilinx/xrt/include /usr/include)
     find_library(XRT_LIB NAMES xrt_core xrt_coreutil xrt HINTS /opt/xilinx/xrt/lib /usr/lib)
@@ -63,7 +65,13 @@ if (USE_FPGA)
     else()
         message(STATUS "Found XRT: include=${XRT_INCLUDE_DIR} lib=${XRT_LIB}")
         target_include_directories(llama PRIVATE ${XRT_INCLUDE_DIR})
-        target_link_libraries(llama PRIVATE ${XRT_LIB})
-        target_compile_definitions(llama PRIVATE USE_FPGA)
+        
+        #target_link_libraries(llama PRIVATE ${XRT_LIB})
+        #target_compile_definitions(llama PRIVATE USE_FPGA)
+
+        # Link thêm các thư viện phụ trợ thường cần cho XRT
+        target_link_libraries(llama PRIVATE ${XRT_LIB} -luuid -lstdc++fs)
+        # 3. Quan trọng: PUBLIC để main.cpp cũng thấy define này
+        target_compile_definitions(llama PUBLIC USE_FPGA)
     endif()
 endif()
