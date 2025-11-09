@@ -141,7 +141,7 @@ int main(int argc, char ** argv) {
     LOG_INF("%s: load the model and apply lora adapter, if any\n", __func__);
 
     // Initialize FPGA host (non-fatal). Reads configuration from environment
-    // variables so we don't need to rebuild when moving between PC and ZCU106.
+    // variables so we don't need to rebuild when moving between PC and ZCU102.
     // Environment variables (optional): FPGA_XCLBIN, FPGA_KERNEL
     // =============================== UP DATE DUONG DAN THEO SET ENVIROMENT VARIABLE =============
     /*
@@ -149,7 +149,7 @@ int main(int argc, char ** argv) {
         cmake -S . -B build_ver2 -DCMAKE_BUILD_TYPE=RelWithDebInfo
         cmake --build build_ver2 --target llama-cli -j
 
-        # Build with FPGA support (on ZCU106 or cross-compile env)  
+        # Build with FPGA support (on ZCU102 or cross-compile env)  
         cmake -S . -B build_ver2 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_FPGA=ON
         cmake --build build_ver2 --target llama-cli -j
 
@@ -1044,5 +1044,7 @@ int main(int argc, char ** argv) {
     ggml_threadpool_free_fn(threadpool);
     ggml_threadpool_free_fn(threadpool_batch);
 
+     // Shutdown FPGA host
+    fpga_host_shutdown();
     return 0;
 }
