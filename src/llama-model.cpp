@@ -24,6 +24,11 @@
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+// =============== IF USE_FPGA==============
+#ifdef USE_FPGA
+#include "fpga_host.h" 
+#include "log.h"       
+#endif
 
 const char * llm_type_name(llm_type type) {
     switch (type) {
@@ -2166,6 +2171,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         ggml_backend_buffer_type_t first_moved_from_buft = nullptr;
         ggml_backend_buffer_type_t first_moved_to_buft = nullptr;
 
+        //================ CHEN LOGIC OFFLOAD =================== 
         auto create_tensor = [&](const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags) -> ggml_tensor * {
             ggml_tensor * t_meta = ml.get_tensor_meta(tn.str().c_str());
 
@@ -2301,7 +2307,46 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     return t;
                 }
             }
-            return ml.create_tensor(ctx, tn, ne, flags);
+           // return ml.create_tensor(ctx, tn, ne, flags);
+            ggml_tensor * new_tensor = ml.create_tensor(ctx, tn, ne, flags);
+
+                    // --- BẮT ĐẦU CODE TASK 3 ---
+                    // 'new_tensor' là tensor vừa được tạo, dữ liệu của nó (new_tensor->data)
+                    // bây giờ đã ở trên CPU.
+#ifdef USE_FPGA
+                    if (fpga_ready() && new_tensor != nullptr) {
+                        // Điều kiện: Chỉ offload các tensor Q8_0 (có thể đổi điều kiện)
+                        if (new_tensor->type == GGML_TYPE_Q8_0) {
+                            const std::string s_name = new_tensor->name;
+                            size_t nbytes = ggml_nbytes(new_tensor);
+
+                            // 1. Cấp phát BO trên FPGA
+                            int bo_idx = fpga_alloc_bo(nbytes);
+                            
+                            if (bo_idx >= 0) {
+                                // 2. Ghi dữ liệu (new_tensor->data) vào BO
+                                if (fpga_bo_write(bo_idx, new_tensor->data, nbytes)) {
+                                    
+                                    // 3. map (tên tensor -> BO index)
+                                    fpga_register_tensor_bo(s_name, bo_idx);
+                                    LOG_INF("%s:  offloaded tensor '%s' (%zu bytes) in FPGA BO index %d\n",
+                                        __func__, s_name.c_str(), nbytes, bo_idx);
+
+                                } else {
+                                    LOG_WRN("%s: error when writing tensor '%s' in BO %d\n", // loi khi ghi tensor len bo
+                                        __func__, s_name.c_str(), bo_idx);
+                                }
+                            } else {
+                                LOG_WRN("%s: error when allocating Bo for tensor '%s' (%zu bytes)\n", // loi khi cap phat bo cho tensor
+                                    __func__, s_name.c_str(), nbytes);
+                            }
+                        }
+                    }
+#endif
+                    
+
+                    return new_tensor; // tra ve tensor moi tao
+
         };
 
         layers.resize(n_layer);
