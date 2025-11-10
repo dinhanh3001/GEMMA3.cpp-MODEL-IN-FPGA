@@ -32,4 +32,17 @@ void fpga_register_tensor_bo(const std::string &name, int bo_idx);
 
 // Lấy BO index từ tên tensor 
 int fpga_get_bo_idx_for_name(const std::string &name);
+
+// =============== TASK 4============== 
+// CAP PHAT BOS TOAN CUC CHO ACTIVATIONS (A) VA RESULTS (C) 
+// DUA TREN KICH THUOC TOI DA CUA MODEL ( LAY TU HPARAMS )
+bool fpga_create_global_buffers(size_t n_ctx, size_t n_ff, std::string &err);
+
+// LAY INDEX CUA BO (A) TOAN CUC 
+int fpga_get_global_bo_A_idx();
+
+// LAY INDEX CUA BO (C) TOAN CU 
+int fpga_get_global_bo_C_idx();
+// --- KET THUC TASK 4 -------- 
+
 #endif // FPGA_HOST_H
