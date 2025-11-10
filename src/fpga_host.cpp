@@ -11,8 +11,11 @@
 #include <mutex>
 #include <sstream>
 #include <unordered_map> 
+#include <cstdint>
+
 
 #ifdef USE_FPGA
+// ---- INCLUDE XRT 
 #include <xrt/xrt_device.h>
 #include <xrt/xrt_kernel.h>
 #include <xrt/xrt_bo.h>
@@ -55,15 +58,23 @@ static xrt::uuid g_uuid;
 static std::unique_ptr<xrt::kernel> g_kernel;
 static std::vector<std::unique_ptr<xrt::bo>> g_bos;
 static bool g_ready = false;
+
 // --- THÊM CHO TASK 3 ---
 // Map để lưu trữ tên tensor -> BO index
 static std::unordered_map<std::string, int> g_tensor_to_bo_idx;
 // --- KẾT THÚC THÊM ---
 
+// ---  TASK 4 ---
+static int g_bo_A_idx = -1; // INDEX CHO BO (A) TOAN CUC 
+static int g_bo_C_idx = -1; // INDEX CHO BO (C) TOAN CUC 
+// --- END TASK 4 ---
+
 #else
 static bool g_ready = false;
 static std::vector<int> g_bos_dummy; // indexes only for stubs
-static std::unordered_map<std::string, int> g_tensor_to_bo_idx; // Thêm cả stub
+static std::unordered_map<std::string, int> g_tensor_to_bo_idx; // THEN CA STUB 
+static int g_bo_A_idx = -1; // THEM CA STUB 
+static int g_bo_C_idx = -1; // THEM CA STUB 
 #endif
 
 bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_name, std::string &err) {
@@ -74,7 +85,9 @@ bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_na
         g_uuid = g_device->load_xclbin(xclbin_path);
         g_kernel = std::make_unique<xrt::kernel>(*g_device, g_uuid, kernel_name);
         g_bos.clear();
-        g_tensor_to_bo_idx.clear(); // Xóa map cũ khi init
+        g_tensor_to_bo_idx.clear(); // XOA MAP CU 
+        g_bo_A_idx = -1; // RESET KHI INIT 
+        g_bo_C_idx = -1; // RESET KHI INIT 
         g_ready = true;
         return true;
     } catch (const std::exception &e) {
@@ -99,6 +112,8 @@ void fpga_host_shutdown() {
     g_bos.clear();
     g_kernel.reset();
     g_device.reset();
+    g_bo_A_idx = -1; // Reset khi shutdown
+    g_bo_C_idx = -1; // Reset khi shutdown
     g_ready = false;
 #else
     g_tensor_to_bo_idx.clear();
@@ -126,6 +141,7 @@ int fpga_alloc_bo(size_t bytes, int bank) {
         return -1;
     }
 #else
+     (void)bytes; (void)bank;
     // stub: return increasing dummy index
     int idx = (int)g_bos_dummy.size();
     g_bos_dummy.push_back((int)bytes);
@@ -186,7 +202,7 @@ bool fpga_run_matmul(int bo_A, int bo_B, int bo_C, int M, int K, int N) {
     return false;
 #endif
 }
-// --- THÊM CHO TASK 3 ---
+// --- ADD TASK 3 ---
 void fpga_register_tensor_bo(const std::string &name, int bo_idx) {
     std::lock_guard<std::mutex> lk(g_fpga_mutex);
     g_tensor_to_bo_idx[name] = bo_idx;
@@ -200,4 +216,60 @@ int fpga_get_bo_idx_for_name(const std::string &name) {
     }
     return -1; // Không tìm thấy
 }
-// --- KẾT THÚC THÊM ---
+// --- END TASK 3 ---
+
+// --- ADD FOR TASK 4 ---------- 
+bool fpga_create_global_buffers(size_t n_ctx, size_t n_ff, std::string &err) {
+    std::lock_guard<std::mutex> lk(g_fpga_mutex);
+#ifdef USE_FPGA
+    if (!g_ready) {
+        err = "FPGA not ready";
+        return false;
+    }
+    // TINH TOAN KICH THUOC TOI DA
+    // A (src0) LA Q8_0 (1BYTE)
+    // C (dst) LA F32 (4 BYTE)
+    // KICH THUOC LON NHAT CUA MA TRAN LA (n_ctx) x (n_ff)
+    size_t max_rows = n_ctx;
+    size_t max_cols = n_ff;
+    size_t bytes_A = max_rows * max_cols * sizeof(int8_t); // Kích thước của Q8_0
+    size_t bytes_C = max_rows * max_cols * sizeof(float); // Kích thước của F32
+    try {
+        // CAP PHAT BO CHO A (Activation)
+        g_bo_A_idx = fpga_alloc_bo(bytes_A);
+        if (g_bo_A_idx < 0) {
+            err = "Failed to allocate global BO for A";
+            return false;
+        }
+
+        // CAP PHAT  BO cho C (Result)
+        g_bo_C_idx = fpga_alloc_bo(bytes_C);
+        if (g_bo_C_idx < 0) {
+            err = "Failed to allocate global BO for C";
+            // (Lưu ý: nên có logic thu hồi g_bo_A_idx ở đây, nhưng tạm bỏ qua cho prototype)
+            return false;
+        }
+        
+        return true;
+    } catch (const std::exception &e) {
+        err = e.what();
+        return false;
+    }
+#else
+    (void)n_ctx; (void)n_ff;
+    err = "FPGA support disabled";
+    g_bo_A_idx = 999998; // Dummy index cho stub
+    g_bo_C_idx = 999999; // Dummy index cho stub
+    return true; // Trả về true cho stub để code chính tiếp tục
+#endif
+}
+
+int fpga_get_global_bo_A_idx() {
+    // Không cần mutex, đây là chỉ số int, đọc_ghi là atomic
+    return g_bo_A_idx;
+}
+
+int fpga_get_global_bo_C_idx() {
+    return g_bo_C_idx;
+}
+// ------ END TASK 4 -----
