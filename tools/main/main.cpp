@@ -15,7 +15,10 @@
 #include <string>
 #include <vector>
 
+#ifdef USE_FPGA
 #include "fpga_host.h"
+#endif
+
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <signal.h>
@@ -197,6 +200,29 @@ int main(int argc, char ** argv) {
 
     model = llama_init.model.get();
     ctx = llama_init.context.get();
+
+    // --- BẮT ĐẦU CODE TASK 4 ---
+#ifdef USE_FPGA
+    if (fpga_ready() && model != nullptr) {
+        // LAY HPARAM TU MODEL VUA LOAD 
+        const auto & hparams = llama_model_get_hparams(model);
+        size_t n_ctx  = llama_n_ctx(ctx); // LAY n_ctx TU CONTEXT 
+        size_t n_ff   = hparams.n_ff; // LAY INTERMEDIATE DIM 
+
+        LOG_INF("%s: Cấp phát BOs toàn cục cho activations/results (max_rows=%zu, max_cols=%zu)\n",
+            __func__, n_ctx, n_ff);
+
+        std::string fpga_err;
+        if (!fpga_create_global_buffers(n_ctx, n_ff, fpga_err)) {
+            // 
+            LOG_WRN("%s: Không thể cấp phát BOs toàn cục cho A/C: %s\n", __func__, fpga_err.c_str());
+        } else {
+            LOG_INF("%s: Đã cấp phát BOs toàn cục (A_idx=%d, C_idx=%d)\n", __func__,
+                fpga_get_global_bo_A_idx(), fpga_get_global_bo_C_idx());
+        }
+    }
+#endif
+    // --- END  TASK 4 ---
 
     if (model == NULL) {
         LOG_ERR("%s: error: unable to load model\n", __func__);
