@@ -180,6 +180,7 @@ int main(int argc, char ** argv) {
   */ 
    // Initialize FPGA host (non-fatal)
    //============================= UPDATE TEN KERNAL TRUC TIEP ===================
+   #ifdef USE_FPGA
     {
         // Fixed paths for FPGA bitstream and kernel
         std::string xclbin_path = "/lib/firmware/kernal_forward.xclbin";  // <-- Thay đường dẫn này
@@ -193,9 +194,9 @@ int main(int argc, char ** argv) {
         }
     }
 
+#endif
 
-
-
+   
     common_init_result llama_init = common_init_from_params(params);
 
     model = llama_init.model.get();
@@ -205,7 +206,8 @@ int main(int argc, char ** argv) {
 #ifdef USE_FPGA
     if (fpga_ready() && model != nullptr) {
         // LAY HPARAM TU MODEL VUA LOAD 
-        const auto & hparams = llama_model_get_hparams(model);
+        //const auto & hparams = llama_model_get_hparams(model);
+        const auto & hparams = llama_get_hparams(model);
         size_t n_ctx  = llama_n_ctx(ctx); // LAY n_ctx TU CONTEXT 
         size_t n_ff   = hparams.n_ff; // LAY INTERMEDIATE DIM 
 
@@ -1071,6 +1073,8 @@ int main(int argc, char ** argv) {
     ggml_threadpool_free_fn(threadpool_batch);
 
      // Shutdown FPGA host
+    #ifdef USE_FPGA
     fpga_host_shutdown();
+    #endif
     return 0;
 }
