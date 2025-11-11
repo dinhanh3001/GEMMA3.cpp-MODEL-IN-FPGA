@@ -21,6 +21,7 @@
 #include <alloca.h>
 #endif
 
+
 #include <assert.h>
 #include <errno.h>
 #include <time.h>
@@ -45,6 +46,12 @@
 #if defined(__ARM_FEATURE_SVE) || defined(__ARM_FEATURE_MATMUL_INT8)
 #undef GGML_USE_LLAMAFILE
 #endif
+/// ==================================================================
+#ifdef USE_FPGA
+#include "fpga_host.h"
+#include "log.h" // Dùng LOG_INF/LOG_WRN
+#endif
+// ===================================================================
 
 #ifdef GGML_USE_LLAMAFILE
 #include "llamafile/sgemm.h"
@@ -1205,7 +1212,75 @@ static void ggml_compute_forward_mul_mat_one_chunk(
 void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,// tham so tinh toan 
               struct ggml_tensor * dst) { // tensor luu kiet qua 
+    
+    // --- START TASK 5 (FPGA HOOK) ---
+#ifdef USE_FPGA
+    if (fpga_ready()) {
+        struct ggml_tensor * src0 = dst->src[0]; // Ma trận A (Activation)
+        struct ggml_tensor * src1 = dst->src[1]; // Ma trận B (Weight)
 
+        // ĐIỀU KIỆN OFFLOAD:
+        // Giả định: Kernel  xử lý Q8_0 (A) * Q8_0 (B) -> F32 (C)
+        // (có thể thay đổi điều kiện này nếu kernel khác)
+        if (src0->type == GGML_TYPE_Q8_0 &&
+            src1->type == GGML_TYPE_Q8_0 &&
+            dst->type  == GGML_TYPE_F32) {
+
+            // 3. Kiểm tra xem 'src1' (trọng số) đã được offload (ở Task 3) chưa
+            int bo_B_idx = fpga_get_bo_idx_for_name(src1->name);
+
+            if (bo_B_idx >= 0) {
+                // Lấy BO toàn cục (từ Task 4)
+                int bo_A_idx = fpga_get_global_bo_A_idx();
+                int bo_C_idx = fpga_get_global_bo_C_idx();
+
+                if (bo_A_idx < 0 || bo_C_idx < 0) {
+                    LOG_WRN("FPGA Hook: BOs toàn cục A/C không hợp lệ. Fallback về CPU.");
+                } else {
+                    // Lấy kích thước (M, K, N)
+                    // GGML lưu tensor dims (ne) là [cols, rows, ...]
+                    // A (src0) = [K, M]
+                    // B (src1) = [K, N] (trong ggml_mul_mat, B KHÔNG transpose)
+                    // C (dst)  = [N, M]
+                    const int M = src0->ne[1];
+                    const int K = src0->ne[0];
+                    const int N = src1->ne[1];
+
+                    // (Kiểm tra kích thước nhanh với các tensor khác)
+                    if (src1->ne[0] != K || dst->ne[1] != M || dst->ne[0] != N) {
+                         LOG_WRN("FPGA Hook: Kích thước tensor không khớp (%s). Fallback về CPU.", dst->name);
+                    } else {
+                        // 1. Viết 'src0' (A) vào BO (A)
+                        // (Xử lý "partial write" bằng cách chỉ ghi nbytes thực tế của src0)
+                        size_t bytes_A = ggml_nbytes(src0);
+                        if (!fpga_bo_write(bo_A_idx, src0->data, bytes_A)) {
+                            LOG_WRN("FPGA Hook: Lỗi khi ghi BO A (%s). Fallback về CPU.", dst->name);
+                        } else {
+                            // 2. Chạy kernel
+                            if (!fpga_run_matmul(bo_A_idx, bo_B_idx, bo_C_idx, M, K, N)) {
+                                LOG_WRN("FPGA Hook: Lỗi khi chạy kernel (%s). Fallback về CPU.", dst->name);
+                            } else {
+                                // 3. Đọc kết quả từ BO (C) về 'dst'
+                                size_t bytes_C = ggml_nbytes(dst);
+                                if (!fpga_bo_read(bo_C_idx, dst->data, bytes_C)) {
+                                    LOG_WRN("FPGA Hook: Lỗi khi đọc BO C (%s). Fallback về CPU.", dst->name);
+                                } else {
+                                    // THÀNH CÔNG!
+                                    // Bỏ comment dòng sau nếu muốn log mỗi lần chạy kernel:
+                                     LOG_INF("FPGA: Đã chạy %s (M=%d, K=%d, N=%d)\n", dst->name, M, K, N);
+                                    
+                                    // Bỏ qua (skip) code CPU
+                                    return; 
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+#endif
+    // --- END TASK 5 (FPGA HOOK) ---
     const struct ggml_tensor * src0 = dst->src[0]; // ma tran nguon thu nhat 
     const struct ggml_tensor * src1 = dst->src[1]; // ma tran nguon thu hai 
 
