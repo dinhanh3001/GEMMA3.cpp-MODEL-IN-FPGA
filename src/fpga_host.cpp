@@ -43,8 +43,8 @@ uint64_t get_bank_base(int bank) {
         // 3 -> HP0_PCIE_LOW
         case 0: return HP0_DDR_HIGH_BASE; // Default high memory
         case 1: return HP0_DDR_LOW_BASE;  // Low memory region
-        case 2: return HP0_QSPI_BASE;     // QSPI region
-        case 3: return HP0_PCIE_LOW_BASE; // PCIE low region
+      //  case 2: return HP0_QSPI_BASE;     // QSPI region
+       // case 3: return HP0_PCIE_LOW_BASE; // PCIE low region
         default: return HP0_DDR_HIGH_BASE;
     }
 }
