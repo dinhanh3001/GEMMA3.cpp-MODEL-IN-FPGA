@@ -164,6 +164,7 @@ int main(int argc, char ** argv) {
 
 
     /*
+    #ifdef USE_FPGA
     {
         const char *env_xclbin = std::getenv("FPGA_XCLBIN");
         const char *env_kernel = std::getenv("FPGA_KERNEL");
@@ -177,6 +178,7 @@ int main(int argc, char ** argv) {
             LOG_WRN("%s: FPGA host init failed or not enabled: %s\n", __func__, fpga_err.c_str());
         }
     }
+        #endif
   */ 
    // Initialize FPGA host (non-fatal)
    //============================= UPDATE TEN KERNAL TRUC TIEP ===================
