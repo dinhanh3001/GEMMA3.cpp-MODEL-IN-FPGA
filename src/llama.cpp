@@ -411,3 +411,7 @@ const char * llama_print_system_info(void) {
     return s.c_str();
 }
 
+int32_t llama_model_n_ff(const struct llama_model * model) {
+    // Gọi hàm n_ff và truyền n_embd vào làm tham số
+    return (int32_t)model->hparams.n_ff(model->hparams.n_embd);
+}
