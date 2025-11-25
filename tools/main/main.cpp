@@ -209,12 +209,13 @@ int main(int argc, char ** argv) {
     if (fpga_ready() && model != nullptr) {
         // LAY HPARAM TU MODEL VUA LOAD 
        // const auto & hparams = llama_model_get_hparams(model);
-        //const auto & hparams = llama_get_hparams(model);
-        //size_t n_ctx  = llama_n_ctx(ctx); // LAY n_ctx TU CONTEXT 
-        //size_t n_ff   = hparams.n_ff; // LAY INTERMEDIATE DIM 
-        size_t n_ctx = llama_n_ctx(ctx);
+        const auto & hparams = llama_get_hparams(model);
+        size_t n_ctx  = llama_n_ctx(ctx); // LAY n_ctx TU CONTEXT 
+        size_t n_ff   = hparams.n_ff; // LAY INTERMEDIATE DIM 
+
+        //size_t n_ctx = llama_n_ctx(ctx);
         // Gọi hàm getter mới tự viết
-       size_t n_ff  = (size_t)llama_model_n_ff(model);
+       //size_t n_ff  = (size_t)llama_model_n_ff(model);
 
         LOG_INF("%s: Cấp phát BOs toàn cục cho activations/results (max_rows=%zu, max_cols=%zu)\n",
             __func__, n_ctx, n_ff);
