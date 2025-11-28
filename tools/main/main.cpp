@@ -182,11 +182,12 @@ int main(int argc, char ** argv) {
   */ 
    // Initialize FPGA host (non-fatal)
    //============================= UPDATE TEN KERNAL TRUC TIEP ===================
+   /*
    #ifdef USE_FPGA
     {
         // Fixed paths for FPGA bitstream and kernel
-        std::string xclbin_path = "/lib/firmware/kernal_forward.xclbin";  // <-- Thay đường dẫn này
-        std::string kernel_name = "KERNAL_FORWARD_0";  // <-- Đã sửa tên kernel theo Vivado
+        std::string xclbin_path = "lib/firmware/kernal_forward.xclbin";  // <-- Thay đường dẫn này
+        std::string kernel_name = "KERNAL_FORWARD_0";  // 
 
         std::string fpga_err;
         if (fpga_host_init(xclbin_path, kernel_name, fpga_err)) {
@@ -197,7 +198,22 @@ int main(int argc, char ** argv) {
     }
 
 #endif
+*/ 
+#ifdef USE_FPGA
+    {
+        // Đường dẫn này giờ vô nghĩa với code mới, nhưng cần để hàm ko lỗi
+        std::string xclbin_path = "DUMMY_PATH"; 
+        std::string kernel_name = "DUMMY_KERNEL"; 
 
+        std::string fpga_err;
+        // Hàm này giờ chỉ làm nhiệm vụ mmap /dev/mem
+        if (fpga_host_init(xclbin_path, kernel_name, fpga_err)) {
+            LOG_INF("%s: FPGA host initialized (Bare-metal mode)\n", __func__);
+        } else {
+            LOG_WRN("%s: FPGA host init failed: %s\n", __func__, fpga_err.c_str());
+        }
+    }
+#endif
    
     common_init_result llama_init = common_init_from_params(params);
 
@@ -209,13 +225,13 @@ int main(int argc, char ** argv) {
     if (fpga_ready() && model != nullptr) {
         // LAY HPARAM TU MODEL VUA LOAD 
        // const auto & hparams = llama_model_get_hparams(model);
-        const auto & hparams = llama_get_hparams(model);
-        size_t n_ctx  = llama_n_ctx(ctx); // LAY n_ctx TU CONTEXT 
-        size_t n_ff   = hparams.n_ff; // LAY INTERMEDIATE DIM 
+       // const auto & hparams = llama_get_hparams(model);
+       // size_t n_ctx  = llama_n_ctx(ctx); // LAY n_ctx TU CONTEXT 
+       // size_t n_ff   = hparams.n_ff; // LAY INTERMEDIATE DIM 
 
-        //size_t n_ctx = llama_n_ctx(ctx);
+        size_t n_ctx = llama_n_ctx(ctx);
         // Gọi hàm getter mới tự viết
-       //size_t n_ff  = (size_t)llama_model_n_ff(model);
+       size_t n_ff  = (size_t)llama_model_n_ff(model);
 
         LOG_INF("%s: Cấp phát BOs toàn cục cho activations/results (max_rows=%zu, max_cols=%zu)\n",
             __func__, n_ctx, n_ff);
