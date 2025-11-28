@@ -2,7 +2,298 @@
 // uses the XRT C++ wrapper to manage device/kernel/BOs. If not,
 // it provides simple stub fallbacks so the rest of the project
 // can build and run on a development host.
+#include "fpga_host.h"
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <vector>
+#include <mutex>
+#include <iostream>
+#include <cstring>
+#include <unordered_map>
+#include <sstream>
 
+// ================= CẤU HÌNH ĐỊA CHỈ (ĐÃ XÁC THỰC VỚI VIVADO CỦA BẠN) =================
+// Địa chỉ điều khiển (S_AXI_CONTROL)
+// Dựa trên Address Editor: /KERNAL_FORWARD_0/s_axi_control -> 0xA0000000
+constexpr uint64_t KERNEL_CTRL_BASE = 0xA0000000; 
+
+// Kích thước vùng điều khiển
+// Dựa trên Address Editor: Range = 64K
+constexpr size_t   KERNEL_CTRL_SIZE = 65536; // 64KB
+
+// Địa chỉ RAM vật lý dành cho Buffer
+// Dựa trên Address Editor: HP0_DDR_LOW map từ 0x0000_0000 đến 0x7FFF_FFFF (2GB)
+// Chọn offset 0x40000000 (1GB) để tránh vùng Kernel Linux (thường ở 0-1GB đầu)
+// LƯU Ý QUAN TRỌNG: Hãy đảm bảo bạn đã boot Linux với tham số 'mem=1G' (hoặc nhỏ hơn)
+// để Linux không dùng đè lên vùng nhớ này.
+constexpr uint64_t PHY_MEM_BASE     = 0x40000000; 
+// =====================================================================================
+
+// Cấu trúc quản lý Buffer tự chế
+struct MemBuffer {
+    uint64_t phy_addr;  // Địa chỉ vật lý (cho FPGA dùng)
+    void* virt_addr; // Địa chỉ ảo (cho CPU dùng)
+    size_t   size;
+    bool     valid;
+};
+
+// Global state
+static int g_mem_fd = -1;
+static void* g_ctrl_base_virt = nullptr; // Con trỏ ảo trỏ tới thanh ghi điều khiển
+static std::vector<MemBuffer> g_buffers;
+static uint64_t g_current_phy_offset = 0; // Để cấp phát tuyến tính đơn giản
+static std::mutex g_mutex;
+static bool g_ready = false;
+
+// Maps cho Task 3/4
+static std::unordered_map<std::string, int> g_tensor_map;
+static int g_bo_A_idx = -1;
+static int g_bo_C_idx = -1;
+
+// Helper: Ghi thanh ghi 32-bit
+static void reg_write(int offset, uint32_t value) {
+    if (g_ctrl_base_virt) {
+        volatile uint32_t* ptr = (volatile uint32_t*)((char*)g_ctrl_base_virt + offset);
+        *ptr = value;
+    }
+}
+
+// Helper: Đọc thanh ghi 32-bit
+static uint32_t reg_read(int offset) {
+    if (g_ctrl_base_virt) {
+        volatile uint32_t* ptr = (volatile uint32_t*)((char*)g_ctrl_base_virt + offset);
+        return *ptr;
+    }
+    return 0;
+}
+
+bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_name, std::string &err) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    (void)xclbin_path; (void)kernel_name; // Không dùng file xclbin nữa
+
+    // 1. Mở /dev/mem
+    if ((g_mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
+        err = "Cannot open /dev/mem. Are you root (sudo)?";
+        return false;
+    }
+
+    // 2. Map thanh ghi điều khiển (Control Register)
+    void* map_base = mmap(0, KERNEL_CTRL_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, g_mem_fd, KERNEL_CTRL_BASE);
+    if (map_base == MAP_FAILED) {
+        err = "mmap control register failed";
+        close(g_mem_fd);
+        return false;
+    }
+    g_ctrl_base_virt = map_base;
+
+    // Reset bộ cấp phát bộ nhớ đơn giản
+    g_buffers.clear();
+    g_tensor_map.clear();
+    g_current_phy_offset = 0;
+    
+    // Kiểm tra sơ bộ: Đọc thanh ghi status (Offset 0x00)
+    // Giá trị mong đợi thường là 4 (bit 2 = Idle) hoặc 0 (Reset)
+    uint32_t status = reg_read(0x00);
+    std::cout << "[FPGA] Init: Control Reg (0x00) = 0x" << std::hex << status << std::dec << std::endl;
+
+    g_ready = true;
+    return true;
+#else
+    err = "FPGA disabled";
+    return false;
+#endif
+}
+
+void fpga_host_shutdown() {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    // Unmap tất cả các buffer đã cấp phát
+    for (auto &b : g_buffers) {
+        if (b.valid && b.virt_addr) {
+            munmap(b.virt_addr, b.size);
+        }
+    }
+    g_buffers.clear();
+
+    // Unmap thanh ghi điều khiển
+    if (g_ctrl_base_virt) {
+        munmap(g_ctrl_base_virt, KERNEL_CTRL_SIZE);
+        g_ctrl_base_virt = nullptr;
+    }
+    if (g_mem_fd != -1) {
+        close(g_mem_fd);
+        g_mem_fd = -1;
+    }
+    g_ready = false;
+    std::cout << "[FPGA] Shutdown complete." << std::endl;
+#endif
+}
+
+bool fpga_ready() {
+    return g_ready;
+}
+
+int fpga_alloc_bo(size_t bytes, int bank) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (!g_ready) return -1;
+   // [SỬA 2] Thêm dòng này để tắt warning unused parameter
+    (void)bank;
+    // Cấp phát địa chỉ vật lý tuyến tính đơn giản (Bump pointer)
+    // Align 4KB (Page size)
+    uint64_t phy_addr = PHY_MEM_BASE + g_current_phy_offset;
+    
+    // Map vùng nhớ này vào user-space để CPU có thể ghi
+    void* virt_addr = mmap(0, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g_mem_fd, phy_addr);
+    if (virt_addr == MAP_FAILED) {
+        std::cerr << "[FPGA] Failed to mmap buffer at phy: 0x" << std::hex << phy_addr << std::dec << std::endl;
+        return -1;
+    }
+
+    MemBuffer buf;
+    buf.phy_addr = phy_addr;
+    buf.virt_addr = virt_addr;
+    buf.size = bytes;
+    buf.valid = true;
+
+    g_buffers.push_back(buf);
+    g_current_phy_offset += bytes;
+    
+    // Align 4KB cho lần cấp phát sau
+    if (g_current_phy_offset % 4096 != 0) {
+        g_current_phy_offset += (4096 - (g_current_phy_offset % 4096));
+    }
+
+    return (int)g_buffers.size() - 1;
+#else
+    return -1;
+#endif
+}
+
+bool fpga_bo_write(int idx, const void * src, size_t nbytes) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (idx < 0 || idx >= (int)g_buffers.size()) return false;
+    MemBuffer &buf = g_buffers[idx];
+    
+    if (nbytes > buf.size) nbytes = buf.size; // Safety check
+
+    // Copy từ src (CPU user buffer) sang virt_addr (mapped RAM - DDR)
+    std::memcpy(buf.virt_addr, src, nbytes);
+    
+    // Lưu ý: Vì open /dev/mem với O_SYNC, thao tác này sẽ ghi thẳng xuống RAM (bỏ qua cache).
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool fpga_bo_read(int idx, void * dst, size_t nbytes) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (idx < 0 || idx >= (int)g_buffers.size()) return false;
+    MemBuffer &buf = g_buffers[idx];
+
+    if (nbytes > buf.size) nbytes = buf.size;
+
+    // Copy từ virt_addr (mapped RAM - DDR) về dst (CPU user buffer)
+    std::memcpy(dst, buf.virt_addr, nbytes);
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool fpga_run_matmul(int bo_A, int bo_B, int bo_C, int M, int K, int N) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (!g_ready) return false;
+    
+    // Lấy địa chỉ vật lý của các buffer
+    uint64_t addr_A = g_buffers[bo_A].phy_addr;
+    uint64_t addr_B = g_buffers[bo_B].phy_addr;
+    uint64_t addr_C = g_buffers[bo_C].phy_addr;
+
+    // Ghi tham số xuống Register (Offsets đã xác thực từ HLS report của bạn)
+    
+    // Arg 0: A (64-bit) -> Offset 0x10 (Low), 0x14 (High)
+    reg_write(0x10, (uint32_t)(addr_A & 0xFFFFFFFF));
+    reg_write(0x14, (uint32_t)(addr_A >> 32));
+
+    // Arg 1: B (64-bit) -> Offset 0x1C (Low), 0x20 (High)
+    reg_write(0x1C, (uint32_t)(addr_B & 0xFFFFFFFF));
+    reg_write(0x20, (uint32_t)(addr_B >> 32));
+
+    // Arg 2: C (64-bit) -> Offset 0x28 (Low), 0x2C (High)
+    reg_write(0x28, (uint32_t)(addr_C & 0xFFFFFFFF));
+    reg_write(0x2C, (uint32_t)(addr_C >> 32));
+
+    // Arg 3: M (32-bit) -> Offset 0x34
+    reg_write(0x34, (uint32_t)M);
+
+    // Arg 4: K (32-bit) -> Offset 0x3C
+    reg_write(0x3C, (uint32_t)K);
+
+    // Arg 5: N (32-bit) -> Offset 0x44
+    reg_write(0x44, (uint32_t)N);
+
+    // Bắt đầu Kernel: Ghi 1 vào Control Register (Offset 0x00)
+    // Bit 0 = AP_START
+    reg_write(0x00, 1);
+
+    // Polling đợi xong (Busy wait)
+    // Đọc Control Register (0x00), đợi bit 1 (AP_DONE) hoặc bit 2 (AP_IDLE) lên 1
+    int timeout = 10000000;
+    while (timeout-- > 0) {
+        uint32_t ctrl = reg_read(0x00);
+        if ((ctrl & 0x2) || (ctrl & 0x4)) { // Done or Idle
+            // Clear interrupt/done bit nếu cần (tuỳ cấu hình HLS, thường ghi 1 vào bit tương ứng để clear)
+            // reg_write(0x00, ctrl); 
+            return true;
+        }
+    }
+    
+    std::cerr << "[FPGA] Error: Kernel Timeout! (Ctrl Reg: 0x" << std::hex << reg_read(0x00) << std::dec << ")" << std::endl;
+    return false; // Timeout
+#else
+    return false;
+#endif
+}
+
+// Logic cho Task 3: Đăng ký tensor name với BO index
+void fpga_register_tensor_bo(const std::string &name, int bo_idx) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    g_tensor_map[name] = bo_idx;
+}
+
+int fpga_get_bo_idx_for_name(const std::string &name) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    auto it = g_tensor_map.find(name);
+    return (it != g_tensor_map.end()) ? it->second : -1;
+}
+
+// Logic cho Task 4: Cấp phát Global Buffers cho Activation/Result
+bool fpga_create_global_buffers(size_t n_ctx, size_t n_ff, std::string &err) {
+    // Không cần lock ở đây vì fpga_alloc_bo đã có lock
+    // Tính toán kích thước tối đa cần thiết
+    size_t bytes_A = n_ctx * n_ff * 1; // Q8 (1 byte per element)
+    size_t bytes_C = n_ctx * n_ff * 4; // F32 (4 bytes per element)
+    
+    g_bo_A_idx = fpga_alloc_bo(bytes_A);
+    g_bo_C_idx = fpga_alloc_bo(bytes_C);
+    
+    if (g_bo_A_idx < 0 || g_bo_C_idx < 0) {
+        err = "Failed to allocate physical memory (Check PHY_MEM_BASE permissions)";
+        return false;
+    }
+    return true;
+}
+
+int fpga_get_global_bo_A_idx() { return g_bo_A_idx; }
+int fpga_get_global_bo_C_idx() { return g_bo_C_idx; }
+/*
 #include "fpga_host.h"
 #include <cstdlib>
 #include <cstring>
@@ -273,3 +564,4 @@ int fpga_get_global_bo_C_idx() {
     return g_bo_C_idx;
 }
 // ------ END TASK 4 -----
+*/ 
