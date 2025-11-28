@@ -27,7 +27,7 @@
 // =============== IF USE_FPGA==============
 #ifdef USE_FPGA
 #include "fpga_host.h" 
-#include "log.h"       
+
 #endif
 
 const char * llm_type_name(llm_type type) {
@@ -2313,36 +2313,36 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     // --- BẮT ĐẦU CODE TASK 3 ---
                     // 'new_tensor' là tensor vừa được tạo, dữ liệu của nó (new_tensor->data)
                     // bây giờ đã ở trên CPU.
+                  // --- BẮT ĐẦU CODE TASK 3 (ĐÃ SỬA LỖI LOG) ---
 #ifdef USE_FPGA
                     if (fpga_ready() && new_tensor != nullptr) {
-                        // Điều kiện: Chỉ offload các tensor Q8_0 (có thể đổi điều kiện)
                         if (new_tensor->type == GGML_TYPE_Q8_0) {
                             const std::string s_name = new_tensor->name;
                             size_t nbytes = ggml_nbytes(new_tensor);
 
-                            // 1. Cấp phát BO trên FPGA
                             int bo_idx = fpga_alloc_bo(nbytes);
                             
                             if (bo_idx >= 0) {
-                                // 2. Ghi dữ liệu (new_tensor->data) vào BO
                                 if (fpga_bo_write(bo_idx, new_tensor->data, nbytes)) {
-                                    
-                                    // 3. map (tên tensor -> BO index)
                                     fpga_register_tensor_bo(s_name, bo_idx);
-                                    LOG_INF("%s:  offloaded tensor '%s' (%zu bytes) in FPGA BO index %d\n",
+                                    
+                                    // SỬA: Đổi LOG_INF thành LLAMA_LOG_INFO
+                                    LLAMA_LOG_INFO("%s: [FPGA] Offloaded tensor '%s' (%zu bytes) -> BO %d\n",
                                         __func__, s_name.c_str(), nbytes, bo_idx);
 
                                 } else {
-                                    LOG_WRN("%s: error when writing tensor '%s' in BO %d\n", // loi khi ghi tensor len bo
+                                    // SỬA: Đổi LOG_WRN thành LLAMA_LOG_WARN
+                                    LLAMA_LOG_WARN("%s: [FPGA] Failed to write tensor '%s' to BO %d\n",
                                         __func__, s_name.c_str(), bo_idx);
                                 }
                             } else {
-                                LOG_WRN("%s: error when allocating Bo for tensor '%s' (%zu bytes)\n", // loi khi cap phat bo cho tensor
-                                    __func__, s_name.c_str(), nbytes);
+                                LLAMA_LOG_WARN("%s: [FPGA] Failed to alloc BO for tensor '%s'\n",
+                                    __func__, s_name.c_str());
                             }
                         }
                     }
 #endif
+                    // --- KẾT THÚC CODE TASK 3 ---
                     
 
                     return new_tensor; // tra ve tensor moi tao
