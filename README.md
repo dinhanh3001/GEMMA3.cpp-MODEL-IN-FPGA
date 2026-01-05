@@ -13,7 +13,7 @@ This project focuses on designing and executing a hardware accelerator  for the 
 The primary objective is to solve the "Memory Wall" bottleneck and enhance inference speed on edge devices. This is achieved by offloading heavy matrix multiplication operations (GEMM/GEMV) from the CPU to the FPGA using a custom compute kernel optimized.
 
 # Feature: 
-* ** Quantization IN8 model Support: Perform computation driectly on 8 bit quantized, compatiable with GGUF format ( you can do this project with other model like: Llama, Qwen, ...), reducing memory bandwidth requirement by 4x comparing with Float 32 bit.
+* ** Quantization INT8 model Support: Perform computation driectly on 8 bit quantized, compatiable with GGUF format ( you can do this project with other model like: Llama, Qwen, ...), reducing memory bandwidth requirement by 4x comparing with Float 32 bit.
 * Split array Memory layout: Implements a separaating scale factors and weights to resolve struct misalignment issues, optimizing data alignment for AXI 4 Burst.
 * The kernel forward IP:
    Decompse large matrix into fixed 16x64 blocks to fit on chip BRAM resources
