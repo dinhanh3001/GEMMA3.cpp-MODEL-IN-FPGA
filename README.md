@@ -1,7 +1,7 @@
 
 # Hardware Accelerator for Gemma 3 LLM on FPGA 
 
-> **Note:** This project is currently a Work in Progress. The core compute kernel and system communication interfaces are completed. Host software integration and user interface components will be updated in future releases.
+> **Note:** This project is currently a Work in Progress. The core compute kernel and system communication interfaces are completed. Host software integration,user interface components  and Video demo on FPGA will be updated in future releases when I complete my courses in univesity.
 
 
 ![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
@@ -32,5 +32,23 @@ The primary objective is to solve the "Memory Wall" bottleneck and enhance infer
 
 <img width="828" height="724" alt="image" src="https://github.com/user-attachments/assets/a740a0a8-f86f-4e75-acf2-74f23b95efe1" />
 
-   
+### Workflow 
+1. CPU ( PS) : Pre-processes input prompts, loads the Int8 model into DD RAM, and sends configuaration commands to the FPGA.
+2. FPGA ( PL) :
+   * **DMA master: Automatically fetches date from three separete memory channels ( Activation, scale, weight ) in paralell.
+   * Compute kernel: Performs on chip de-quantization and matrix multiplication accumulation.
+   * Write back: Store the computed results back to DDR Ram after calculate the full matrix that load from DDRAM to BRAM.
+## Reference: 
+The open source original that i do in this project : https://github.com/ggml-org/llama.cpp.git
+
+## Tools: 
+* Vivado
+* HLS
+* Linux
+## Preliminary Results: 
+
+<img width="1779" height="762" alt="image" src="https://github.com/user-attachments/assets/98165f6c-10ec-447b-82ee-8778d3abf9c1" />
+
+* This is the model that i run pure CPU, and the video demo on FPGA will public in the future release.  
+
         
