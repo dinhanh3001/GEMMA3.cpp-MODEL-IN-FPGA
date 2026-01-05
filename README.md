@@ -53,5 +53,6 @@ The main ideal for this project from the LLM model in c++: https://github.com/gg
 
 
 * This is the model that i run purely on CPU Laptop, and the video demo on FPGA will public in the future release.  
-
-        
+## Contact: 
+* Author: Nguyen Dinh Anh, Nguyen Hoang Quoc Cuong
+* Email: anhdinh30012005@gmail.com 
