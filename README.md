@@ -9,3 +9,5 @@ This project focuses on designing and executing a hardware accelerator  for the 
 
 The primary objective is to solve the "Memory Wall" bottleneck and enhance inference speed on edge devices. This is achieved by offloading heavy matrix multiplication operations (GEMM/GEMV) from the CPU to the FPGA using a custom compute kernel optimized.
 > **Note:** This project is currently a Work in Progress (WIP). The core compute kernel and system communication interfaces are complete. Host software integration and user interface components will be updated in future releases.
+# Feature: 
+* ** Quantization IN8 model Support: ** 
