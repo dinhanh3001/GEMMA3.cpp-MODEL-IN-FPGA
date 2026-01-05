@@ -47,9 +47,14 @@ The open source original that i do in this project : https://github.com/ggml-org
 * Linux
 ## Preliminary Results: 
 ### Video Demo: 
-https://github.com/user-attachments/assets/46eb242d-08bf-4eea-aca1-4d74ef2eeca2
 
-<img width="1779" height="762" alt="image" src="https://github.com/user-attachments/assets/98165f6c-10ec-447b-82ee-8778d3abf9c1" />
+
+https://github.com/user-attachments/assets/0260a2cf-520c-4636-b165-354c7e5681a1
+
+
+
+<img width="1537" height="853" alt="image" src="https://github.com/user-attachments/assets/96e880c6-a171-400e-a655-4fa615e56f04" />
+
 
 * This is the model that i run pure CPU, and the video demo on FPGA will public in the future release.  
 
