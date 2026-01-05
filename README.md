@@ -1,7 +1,7 @@
 
 # Hardware Accelerator for Gemma 3 LLM on FPGA 
 
-> **Note:** This project is currently a Work in Progress. The core compute kernel and system communication interfaces are completed. Host software integration,user interface components  and Video demo on FPGA will be updated in future releases when I complete my courses in univesity.
+> **Note:** This project is currently a Work in Progress. The core compute kernel and system communication interfaces are completed. Host software integration,user interface components  and Video demo on FPGA will be updated in future releases when I complete my courses in the univesity.
 
 
 ![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
