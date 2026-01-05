@@ -39,7 +39,7 @@ The primary objective is to solve the "Memory Wall" bottleneck and enhance infer
    * Compute kernel: Performs on chip de-quantization and matrix multiplication accumulation.
    * Write back: Store the computed results back to DDR Ram after calculate the full matrix that load from DDRAM to BRAM.
 ## Reference: 
-The open source original that i do in this project : https://github.com/ggml-org/llama.cpp.git
+The main ideal for this project from the LLM model in c++: https://github.com/ggml-org/llama.cpp.git
 
 ## Tools: 
 * Vivado
@@ -47,7 +47,7 @@ The open source original that i do in this project : https://github.com/ggml-org
 * Linux
 ## Preliminary Results: 
 ### Video Demo: 
-
+* Link driver: https://drive.google.com/file/d/1o2i5w9RthcLGs4K2qFZDNK9LZ5beaZNp/view?usp=sharing
 
 https://github.com/user-attachments/assets/0260a2cf-520c-4636-b165-354c7e5681a1
 
@@ -56,6 +56,6 @@ https://github.com/user-attachments/assets/0260a2cf-520c-4636-b165-354c7e5681a1
 <img width="1537" height="853" alt="image" src="https://github.com/user-attachments/assets/96e880c6-a171-400e-a655-4fa615e56f04" />
 
 
-* This is the model that i run pure CPU, and the video demo on FPGA will public in the future release.  
+* This is the model that i run purely on CPU Laptop, and the video demo on FPGA will public in the future release.  
 
         
