@@ -49,8 +49,6 @@ The main ideal for this project from the LLM model in c++: https://github.com/gg
 ### Video Demo: 
 * Link driver: https://drive.google.com/file/d/1o2i5w9RthcLGs4K2qFZDNK9LZ5beaZNp/view?usp=sharing
 
-https://github.com/user-attachments/assets/10760aee-5979-4b7e-b3f9-a58fe856842c
-
 <img width="1537" height="853" alt="image" src="https://github.com/user-attachments/assets/96e880c6-a171-400e-a655-4fa615e56f04" />
 
 
