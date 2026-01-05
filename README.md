@@ -35,7 +35,7 @@ The primary objective is to solve the "Memory Wall" bottleneck and enhance infer
 ### Workflow 
 1. CPU ( PS) : Pre-processes input prompts, loads the Int8 model into DD RAM, and sends configuaration commands to the FPGA.
 2. FPGA ( PL) :
-   * **DMA master: Automatically fetches date from three separete memory channels ( Activation, scale, weight ) in paralell.
+   * **DMA master: Automatically fetches data from 3 separete memory channels ( Activation, scale, weight ) in paralell.
    * Compute kernel: Performs on chip de-quantization and matrix multiplication accumulation.
    * Write back: Store the computed results back to DDR Ram after calculate the full matrix that load from DDRAM to BRAM.
 ## Reference: 
@@ -49,9 +49,7 @@ The main ideal for this project from the LLM model in c++: https://github.com/gg
 ### Video Demo: 
 * Link driver: https://drive.google.com/file/d/1o2i5w9RthcLGs4K2qFZDNK9LZ5beaZNp/view?usp=sharing
 
-https://github.com/user-attachments/assets/0260a2cf-520c-4636-b165-354c7e5681a1
-
-
+https://github.com/user-attachments/assets/10760aee-5979-4b7e-b3f9-a58fe856842c
 
 <img width="1537" height="853" alt="image" src="https://github.com/user-attachments/assets/96e880c6-a171-400e-a655-4fa615e56f04" />
 
