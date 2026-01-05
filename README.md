@@ -46,6 +46,8 @@ The open source original that i do in this project : https://github.com/ggml-org
 * HLS
 * Linux
 ## Preliminary Results: 
+### Video Demo: 
+https://github.com/user-attachments/assets/46eb242d-08bf-4eea-aca1-4d74ef2eeca2
 
 <img width="1779" height="762" alt="image" src="https://github.com/user-attachments/assets/98165f6c-10ec-447b-82ee-8778d3abf9c1" />
 
