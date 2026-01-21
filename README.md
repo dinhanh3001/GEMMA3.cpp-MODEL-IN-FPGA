@@ -4,7 +4,8 @@
 > **Note:** This project is currently a Work in Progress. The core compute kernel and system communication interfaces are completed. Host software integration,user interface components  and Video demo on FPGA will be updated in future releases when I complete my courses in the univesity.
 
 
-![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
+<img width="474" height="266" alt="image" src="https://github.com/user-attachments/assets/60c73d18-1322-4b72-b3c2-6695b64827b8" />
+
 
 LLM inference in C/C++
 ## Introduction: 
