@@ -27,7 +27,12 @@
 // =============== IF USE_FPGA==============
 #ifdef USE_FPGA
 #include "fpga_host.h" 
-
+// Định nghĩa cấu trúc block Q8_0 để compiler hiểu cách đọc dữ liệu
+#define QK8_0 32
+typedef struct {
+    ggml_fp16_t d;      // scale (half precision)
+    int8_t  qs[QK8_0];  // quants
+} block_q8_0;
 #endif
 
 const char * llm_type_name(llm_type type) {
@@ -2318,30 +2323,55 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     if (fpga_ready() && new_tensor != nullptr) {
                         if (new_tensor->type == GGML_TYPE_Q8_0) {
                             const std::string s_name = new_tensor->name;
-                            size_t nbytes = ggml_nbytes(new_tensor);
-
-                            int bo_idx = fpga_alloc_bo(nbytes);
                             
-                            if (bo_idx >= 0) {
-                                if (fpga_bo_write(bo_idx, new_tensor->data, nbytes)) {
-                                    fpga_register_tensor_bo(s_name, bo_idx);
-                                    
-                                    // SỬA: Đổi LOG_INF thành LLAMA_LOG_INFO
-                                    LLAMA_LOG_INFO("%s: [FPGA] Offloaded tensor '%s' (%zu bytes) -> BO %d\n",
-                                        __func__, s_name.c_str(), nbytes, bo_idx);
+                            // Tính toán kích thước
+                            size_t nelements = ggml_nelements(new_tensor);
+                            size_t n_blocks = nelements / 32; // QK8_0 = 32
+                            
+                            // Size Scale (d): half (2 bytes) * n_blocks
+                            size_t size_d = n_blocks * 2; 
+                            // Size Quants (qs): int8 (1 byte) * nelements
+                            size_t size_qs = nelements;
 
+                            // Cấp phát Buffer tạm trên Host để repack
+                            std::vector<uint16_t> temp_d(n_blocks); // uint16_t đại diện cho half
+                            std::vector<int8_t> temp_qs(nelements);
+
+                            // Lấy con trỏ dữ liệu gốc (Interleaved)
+                            const block_q8_0* src_data = (const block_q8_0*)new_tensor->data;
+
+                            // [REPACK] Tách d và qs
+                            for (size_t i = 0; i < n_blocks; ++i) {
+                                temp_d[i] = src_data[i].d; // Copy scale (half)
+                                for (int j = 0; j < 32; ++j) {
+                                    temp_qs[i*32 + j] = src_data[i].qs[j]; // Copy quants
+                                }
+                            }
+
+                            // Cấp phát 2 BO trên FPGA
+                            int bo_d_idx = fpga_alloc_bo(size_d);
+                            int bo_qs_idx = fpga_alloc_bo(size_qs);
+                            
+                            if (bo_d_idx >= 0 && bo_qs_idx >= 0) {
+                                bool ok1 = fpga_bo_write(bo_d_idx, temp_d.data(), size_d);
+                                bool ok2 = fpga_bo_write(bo_qs_idx, temp_qs.data(), size_qs);
+
+                                if (ok1 && ok2) {
+                                    // Đăng ký cả 2 BO
+                                    fpga_register_tensor_bo(s_name, bo_d_idx, bo_qs_idx);
+                                    
+                                    LLAMA_LOG_INFO("%s: [FPGA] Offloaded/Repacked '%s' (d=%zu, qs=%zu)\n",
+                                        __func__, s_name.c_str(), size_d, size_qs);
                                 } else {
-                                    // SỬA: Đổi LOG_WRN thành LLAMA_LOG_WARN
-                                    LLAMA_LOG_WARN("%s: [FPGA] Failed to write tensor '%s' to BO %d\n",
-                                        __func__, s_name.c_str(), bo_idx);
+                                    LLAMA_LOG_WARN("%s: [FPGA] Write failed '%s'\n", __func__, s_name.c_str());
                                 }
                             } else {
-                                LLAMA_LOG_WARN("%s: [FPGA] Failed to alloc BO for tensor '%s'\n",
-                                    __func__, s_name.c_str());
+                                LLAMA_LOG_WARN("%s: [FPGA] Alloc failed '%s'\n", __func__, s_name.c_str());
                             }
                         }
                     }
 #endif
+// ...
                     // --- KẾT THÚC CODE TASK 3 ---
                     
 
