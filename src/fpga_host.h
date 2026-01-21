@@ -23,15 +23,16 @@ bool fpga_bo_write(int idx, const void * src, size_t nbytes);
 // Read from BO at index
 bool fpga_bo_read(int idx, void * dst, size_t nbytes);
 
-// Run the matmul kernel using BO indices. Returns true on success.
-bool fpga_run_matmul(int bo_A, int bo_B, int bo_C, int M, int K, int N);
+// [THAY ĐỔI] Hàm chạy kernel nhận 2 chỉ số cho B: bo_B_d (Scale) và bo_B_qs (Data)
+bool fpga_run_matmul(int bo_A, int bo_B_d, int bo_B_qs, int bo_C, int M, int K, int N);
 
-// ================ TASk3================
-// map giữa tên tensor và BO index
-void fpga_register_tensor_bo(const std::string &name, int bo_idx);
+// [THAY ĐỔI] Đăng ký 2 chỉ số BO cho một tensor
+void fpga_register_tensor_bo(const std::string &name, int bo_d_idx, int bo_qs_idx);
 
-// Lấy BO index từ tên tensor 
-int fpga_get_bo_idx_for_name(const std::string &name);
+// [THAY ĐỔI] Lấy struct chứa cặp chỉ số (dùng để trả về từ map)
+struct BO_Pair { int d; int qs; };
+BO_Pair fpga_get_bo_idx_for_name(const std::string &name);
+
 
 // =============== TASK 4============== 
 // CAP PHAT BOS TOAN CUC CHO ACTIVATIONS (A) VA RESULTS (C) 
