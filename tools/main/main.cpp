@@ -16,7 +16,7 @@
 #include <vector>
 
 #ifdef USE_FPGA
-#include "fpga_host.h"
+#include "../../ggml/src/ggml-cpu/fpga_host.h"
 #endif
 
 
