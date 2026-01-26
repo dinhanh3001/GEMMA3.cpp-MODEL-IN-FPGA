@@ -26,7 +26,8 @@
 #include <stdexcept>
 // =============== IF USE_FPGA==============
 #ifdef USE_FPGA
-#include "fpga_host.h" 
+//#include "fpga_host.h" 
+#include "../ggml/src/ggml-cpu/fpga_host.h"
 // Định nghĩa cấu trúc block Q8_0 để compiler hiểu cách đọc dữ liệu
 #define QK8_0 32
 typedef struct {
