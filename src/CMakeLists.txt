@@ -57,7 +57,7 @@ endif()
 
 if (USE_FPGA)
     # Thêm source mới
-    target_sources(llama PRIVATE fpga_host.cpp fpga_host.h)
+    #target_sources(llama PRIVATE fpga_host.cpp fpga_host.h)
     
     # QUAN TRỌNG: KHÔNG link thư viện XRT nữa
     # Chỉ cần define macro
