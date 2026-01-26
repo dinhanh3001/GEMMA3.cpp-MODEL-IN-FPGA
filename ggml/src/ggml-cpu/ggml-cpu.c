@@ -49,7 +49,11 @@
 /// ==================================================================
 #ifdef USE_FPGA
 #include "fpga_host.h"
-#include "log.h" // Dùng LOG_INF/LOG_WRN
+//#include "log.h" // Dùng LOG_INF/LOG_WRN
+//#include "fpga_host.h"
+// XÓA DÒNG: #include "log.h" 
+// Thay thế macro log bằng fprintf để tránh lỗi
+#define FPGA_LOG_WARN(fmt, ...) fprintf(stderr, "[FPGA WARN] " fmt "\n", ##__VA_ARGS__)
 #endif
 // ===================================================================
 
@@ -1211,45 +1215,61 @@ static void ggml_compute_forward_mul_mat_one_chunk(
 
 
     
-    // --- START TASK 5 (FPGA HOOK) ---
+    // ---  (FPGA HOOK) ---
 void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
 
-    // --- BẮT ĐẦU CODE TASK 5 (CẬP NHẬT) ---
+    //  ---
 #ifdef USE_FPGA
     if (fpga_ready()) {
-        struct ggml_tensor * src0 = dst->src[0]; // A (Activation)
-        struct ggml_tensor * src1 = dst->src[1]; // B (Weight)
+        struct ggml_tensor * src0 = dst->src[0]; // Ma trận A (Activation)
+        struct ggml_tensor * src1 = dst->src[1]; // Ma trận B (Weight)
 
-        // ĐIỀU KIỆN MỚI: A là F32, B là Q8_0, C là F32
+        // ĐIỀU KIỆN KÍCH HOẠT FPGA:
+        // A là Float32, B là Q8_0, C là Float32 (Đã cập nhật theo kernel mới của bạn)
         if (src0->type == GGML_TYPE_F32 && 
             src1->type == GGML_TYPE_Q8_0 &&
             dst->type  == GGML_TYPE_F32) {
 
-            // Lấy 2 BO của B
+            // Lấy 2 Buffer Object (BO) của trọng số B (Data và Scale)
             BO_Pair bos_B = fpga_get_bo_idx_for_name(src1->name);
 
+            // Kiểm tra xem trọng số này đã được đẩy xuống FPGA chưa (Task 3)
             if (bos_B.d >= 0 && bos_B.qs >= 0) {
+                // Lấy BO toàn cục cho A và C (Task 4)
                 int bo_A_idx = fpga_get_global_bo_A_idx();
                 int bo_C_idx = fpga_get_global_bo_C_idx();
 
-                if (bo_A_idx >= 0 && bo_C_idx >= 0) {
+                if (bo_A_idx < 0 || bo_C_idx < 0) {
+                    FPGA_LOG_WARN("BOs toan cuc A/C khong hop le. Fallback ve CPU.");
+                } else {
+                    // Lấy kích thước ma trận
                     const int M = src0->ne[1];
                     const int K = src0->ne[0];
                     const int N = src1->ne[1];
 
-                    // Kích thước A (F32) = K * M * 4 bytes
-                    size_t bytes_A = ggml_nbytes(src0); 
-
-                    // 1. Ghi A (F32) xuống FPGA
-                    if (fpga_bo_write(bo_A_idx, src0->data, bytes_A)) {
-                        // 2. Chạy kernel với 2 BO của B
-                        if (fpga_run_matmul(bo_A_idx, bos_B.d, bos_B.qs, bo_C_idx, M, K, N)) {
-                            // 3. Đọc kết quả C
-                            size_t bytes_C = ggml_nbytes(dst);
-                            if (fpga_bo_read(bo_C_idx, dst->data, bytes_C)) {
-                                return; // Xong, bỏ qua CPU
+                    // Kiểm tra sơ bộ kích thước tensor để đảm bảo khớp
+                    if (src1->ne[0] != K || dst->ne[1] != M || dst->ne[0] != N) {
+                         FPGA_LOG_WARN("Kich thuoc tensor khong khop (%s). Fallback ve CPU.", dst->name);
+                    } else {
+                        // 1. Ghi dữ liệu A (src0) xuống FPGA
+                        size_t bytes_A = ggml_nbytes(src0);
+                        if (!fpga_bo_write(bo_A_idx, src0->data, bytes_A)) {
+                            FPGA_LOG_WARN("Loi ghi BO A (%s).", dst->name);
+                        } else {
+                            // 2. Chạy kernel trên FPGA
+                            if (!fpga_run_matmul(bo_A_idx, bos_B.d, bos_B.qs, bo_C_idx, M, K, N)) {
+                                FPGA_LOG_WARN("Loi chay kernel (%s).", dst->name);
+                            } else {
+                                // 3. Đọc kết quả C về CPU
+                                size_t bytes_C = ggml_nbytes(dst);
+                                if (!fpga_bo_read(bo_C_idx, dst->data, bytes_C)) {
+                                    FPGA_LOG_WARN("Loi doc BO C (%s).", dst->name);
+                                } else {
+                                    // THÀNH CÔNG! Bỏ qua tính toán CPU
+                                    return; 
+                                }
                             }
                         }
                     }
