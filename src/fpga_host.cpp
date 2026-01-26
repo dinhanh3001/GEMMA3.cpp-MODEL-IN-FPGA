@@ -223,6 +223,16 @@ bool fpga_create_global_buffers(size_t n_ctx, size_t n_ff, std::string &err) {
 
 int fpga_get_global_bo_A_idx() { return g_bo_A_idx; }
 int fpga_get_global_bo_C_idx() { return g_bo_C_idx; }
+void* fpga_get_virt_addr(int idx) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    if (idx < 0 || idx >= (int)g_buffers.size()) return nullptr;
+    return g_buffers[idx].virt_addr;
+}
+void* fpga_get_virt_addr(int idx) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    if (idx < 0 || idx >= (int)g_buffers.size()) return nullptr;
+    return g_buffers[idx].virt_addr;
+}
 /*
 #include "fpga_host.h"
 #include <cstdlib>

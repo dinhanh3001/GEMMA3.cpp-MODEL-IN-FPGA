@@ -45,5 +45,6 @@ int fpga_get_global_bo_A_idx();
 // LAY INDEX CUA BO (C) TOAN CU 
 int fpga_get_global_bo_C_idx();
 // --- KET THUC TASK 4 -------- 
-
+void* fpga_get_virt_addr(int idx); 
+void* fpga_get_virt_addr(int idx); 
 #endif // FPGA_HOST_H
