@@ -417,3 +417,12 @@ if (BUILD_SHARED_LIBS)
         target_compile_definitions(${target} PUBLIC  GGML_SHARED)
     endforeach()
 endif()
+# [THÊM ĐOẠN NÀY VÀO CUỐI FILE]
+if (USE_FPGA)
+    # Thêm fpga_host.cpp vào thư viện ggml chính
+    # Lưu ý đường dẫn: file nằm trong thư mục con ggml-cpu/
+    target_sources(ggml PRIVATE ggml-cpu/fpga_host.cpp)
+    
+    # Định nghĩa USE_FPGA ở mức PUBLIC để ggml-cpu và llama đều thấy
+    target_compile_definitions(ggml PUBLIC USE_FPGA)
+endif()
