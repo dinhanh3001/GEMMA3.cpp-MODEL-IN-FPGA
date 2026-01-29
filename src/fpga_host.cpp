@@ -228,11 +228,7 @@ void* fpga_get_virt_addr(int idx) {
     if (idx < 0 || idx >= (int)g_buffers.size()) return nullptr;
     return g_buffers[idx].virt_addr;
 }
-void* fpga_get_virt_addr(int idx) {
-    std::lock_guard<std::mutex> lk(g_mutex);
-    if (idx < 0 || idx >= (int)g_buffers.size()) return nullptr;
-    return g_buffers[idx].virt_addr;
-}
+
 /*
 #include "fpga_host.h"
 #include <cstdlib>
