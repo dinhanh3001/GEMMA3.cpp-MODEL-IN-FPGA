@@ -2,6 +2,278 @@
 // uses the XRT C++ wrapper to manage device/kernel/BOs. If not,
 // it provides simple stub fallbacks so the rest of the project
 // can build and run on a development host.
+
+#include "fpga_host.h"
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <vector>
+#include <mutex>
+#include <iostream>
+#include <cstring>
+#include <unordered_map>
+
+// ================= CẤU HÌNH ĐỊA CHỈ (KV260 Bare-metal) =================
+constexpr uint64_t KERNEL_CTRL_BASE = 0xA0000000; 
+constexpr size_t   KERNEL_CTRL_SIZE = 65536; 
+// Địa chỉ vùng nhớ vật lý (cần bootargs mem=1024M để tránh xung đột)
+constexpr uint64_t PHY_MEM_BASE     = 0x40000000; 
+// =======================================================================
+
+struct MemBuffer {
+    uint64_t phy_addr; 
+    void* virt_addr; 
+    size_t   size;
+    bool     valid;
+};
+
+// Global state
+static int g_mem_fd = -1;
+static void* g_ctrl_base_virt = nullptr;
+static std::vector<MemBuffer> g_buffers;
+static uint64_t g_current_phy_offset = 0;
+static std::mutex g_mutex;
+static bool g_ready = false;
+
+// Map lưu trữ cặp index (Scale và Data)
+struct TensorBOs { int d; int qs; };
+static std::unordered_map<std::string, TensorBOs> g_tensor_map;
+
+static int g_bo_A_idx = -1;
+static int g_bo_C_idx = -1;
+
+// Helper: Ghi thanh ghi 32-bit
+static void reg_write(int offset, uint32_t value) {
+    if (g_ctrl_base_virt) {
+        volatile uint32_t* ptr = (volatile uint32_t*)((char*)g_ctrl_base_virt + offset);
+        *ptr = value;
+    }
+}
+
+// Helper: Đọc thanh ghi 32-bit
+static uint32_t reg_read(int offset) {
+    if (g_ctrl_base_virt) {
+        volatile uint32_t* ptr = (volatile uint32_t*)((char*)g_ctrl_base_virt + offset);
+        return *ptr;
+    }
+    return 0;
+}
+
+bool fpga_host_init(const std::string &xclbin_path, const std::string &kernel_name, std::string &err) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    (void)xclbin_path; (void)kernel_name;
+    
+    // 1. Mở /dev/mem
+    if ((g_mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
+        err = "Cannot open /dev/mem. Are you root (sudo)?";
+        return false;
+    }
+
+    // 2. Map thanh ghi điều khiển
+    void* map_base = mmap(0, KERNEL_CTRL_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, g_mem_fd, KERNEL_CTRL_BASE);
+    if (map_base == MAP_FAILED) {
+        err = "mmap control register failed";
+        close(g_mem_fd);
+        return false;
+    }
+    g_ctrl_base_virt = map_base;
+
+    // Reset state
+    g_buffers.clear();
+    g_tensor_map.clear();
+    g_current_phy_offset = 0;
+    
+    // Kiểm tra trạng thái
+    uint32_t status = reg_read(0x00);
+    std::cout << "[FPGA] Init: Control Reg (0x00) = 0x" << std::hex << status << std::dec << std::endl;
+
+    g_ready = true;
+    return true;
+#else
+    err = "FPGA disabled";
+    return false;
+#endif
+}
+
+void fpga_host_shutdown() {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    for (auto &b : g_buffers) {
+        if (b.valid && b.virt_addr) {
+            munmap(b.virt_addr, b.size);
+        }
+    }
+    g_buffers.clear();
+
+    if (g_ctrl_base_virt) {
+        munmap(g_ctrl_base_virt, KERNEL_CTRL_SIZE);
+        g_ctrl_base_virt = nullptr;
+    }
+    if (g_mem_fd != -1) {
+        close(g_mem_fd);
+        g_mem_fd = -1;
+    }
+    g_ready = false;
+#endif
+}
+
+bool fpga_ready() {
+    return g_ready;
+}
+
+int fpga_alloc_bo(size_t bytes, int bank) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    (void)bank;
+    if (!g_ready) return -1;
+
+    // Cấp phát địa chỉ vật lý tuyến tính
+    uint64_t phy_addr = PHY_MEM_BASE + g_current_phy_offset;
+    
+    // Map vùng nhớ
+    void* virt_addr = mmap(0, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g_mem_fd, phy_addr);
+    if (virt_addr == MAP_FAILED) {
+        std::cerr << "[FPGA] Failed to mmap buffer at phy: 0x" << std::hex << phy_addr << std::dec << std::endl;
+        return -1;
+    }
+
+    MemBuffer buf;
+    buf.phy_addr = phy_addr;
+    buf.virt_addr = virt_addr;
+    buf.size = bytes;
+    buf.valid = true;
+
+    g_buffers.push_back(buf);
+    g_current_phy_offset += bytes;
+    
+    // Align 4KB
+    if (g_current_phy_offset % 4096 != 0) {
+        g_current_phy_offset += (4096 - (g_current_phy_offset % 4096));
+    }
+
+    return (int)g_buffers.size() - 1;
+#else
+    return -1;
+#endif
+}
+
+bool fpga_bo_write(int idx, const void * src, size_t nbytes) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (idx < 0 || idx >= (int)g_buffers.size()) return false;
+    MemBuffer &buf = g_buffers[idx];
+    if (nbytes > buf.size) nbytes = buf.size;
+    std::memcpy(buf.virt_addr, src, nbytes);
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool fpga_bo_read(int idx, void * dst, size_t nbytes) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (idx < 0 || idx >= (int)g_buffers.size()) return false;
+    MemBuffer &buf = g_buffers[idx];
+    if (nbytes > buf.size) nbytes = buf.size;
+    std::memcpy(dst, buf.virt_addr, nbytes);
+    return true;
+#else
+    return false;
+#endif
+}
+
+// Chạy Kernel (Cập nhật offset theo thiết kế mới nhất của bạn)
+bool fpga_run_matmul(int bo_A, int bo_B_d, int bo_B_qs, int bo_C, int M, int K, int N) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+#ifdef USE_FPGA
+    if (!g_ready) return false;
+    
+    uint64_t addr_A    = g_buffers[bo_A].phy_addr;
+    uint64_t addr_B_d  = g_buffers[bo_B_d].phy_addr;
+    uint64_t addr_B_qs = g_buffers[bo_B_qs].phy_addr;
+    uint64_t addr_C    = g_buffers[bo_C].phy_addr;
+
+    // A -> 0x10
+    reg_write(0x10, (uint32_t)(addr_A & 0xFFFFFFFF));
+    reg_write(0x14, (uint32_t)(addr_A >> 32));
+
+    // B_d -> 0x1c
+    reg_write(0x1c, (uint32_t)(addr_B_d & 0xFFFFFFFF));
+    reg_write(0x20, (uint32_t)(addr_B_d >> 32));
+
+    // B_qs -> 0x28
+    reg_write(0x28, (uint32_t)(addr_B_qs & 0xFFFFFFFF));
+    reg_write(0x2c, (uint32_t)(addr_B_qs >> 32));
+
+    // C -> 0x34
+    reg_write(0x34, (uint32_t)(addr_C & 0xFFFFFFFF));
+    reg_write(0x38, (uint32_t)(addr_C >> 32));
+
+    // M -> 0x40
+    reg_write(0x40, (uint32_t)M);
+
+    // K -> 0x48
+    reg_write(0x48, (uint32_t)K);
+
+    // N -> 0x50
+    reg_write(0x50, (uint32_t)N);
+
+    // Start
+    reg_write(0x00, 1);
+
+    // Poll
+    int timeout = 10000000;
+    while (timeout-- > 0) {
+        if ((reg_read(0x00) & 0x6)) return true; // Done or Idle
+    }
+    std::cerr << "[FPGA] Timeout!" << std::endl;
+    return false;
+#else
+    return false;
+#endif
+}
+
+void fpga_register_tensor_bo(const std::string &name, int bo_d_idx, int bo_qs_idx) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    g_tensor_map[name] = {bo_d_idx, bo_qs_idx};
+}
+
+BO_Pair fpga_get_bo_idx_for_name(const std::string &name) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    auto it = g_tensor_map.find(name);
+    if (it != g_tensor_map.end()) {
+        return {it->second.d, it->second.qs};
+    }
+    return {-1, -1};
+}
+
+bool fpga_create_global_buffers(size_t n_ctx, size_t n_ff, std::string &err) {
+    // A và C đều là float (4 bytes)
+    size_t bytes_A = n_ctx * n_ff * 4;
+    size_t bytes_C = n_ctx * n_ff * 4;
+    
+    g_bo_A_idx = fpga_alloc_bo(bytes_A);
+    g_bo_C_idx = fpga_alloc_bo(bytes_C);
+    
+    if (g_bo_A_idx < 0 || g_bo_C_idx < 0) {
+        err = "Failed to alloc global buffers (Check PHY_MEM_BASE)";
+        return false;
+    }
+    return true;
+}
+
+int fpga_get_global_bo_A_idx() { return g_bo_A_idx; }
+int fpga_get_global_bo_C_idx() { return g_bo_C_idx; }
+
+// Helper để ghi trực tiếp (Tránh OOM)
+void* fpga_get_virt_addr(int idx) {
+    std::lock_guard<std::mutex> lk(g_mutex);
+    if (idx < 0 || idx >= (int)g_buffers.size()) return nullptr;
+    return g_buffers[idx].virt_addr;
+}
+/*
 #include "fpga_host.h"
 #include <fcntl.h>
 #include <sys/mman.h>
