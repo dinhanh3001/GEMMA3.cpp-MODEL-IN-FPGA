@@ -608,10 +608,11 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
     endif()
 endfunction()
 
-if (USE_FPGA)
+
+#if (USE_FPGA)
     # Thêm fpga_host.cpp vào thư viện ggml-cpu
-    target_sources(ggml-cpu PRIVATE fpga_host.cpp)
+ #   target_sources(ggml-cpu PRIVATE fpga_host.cpp)
     # Định nghĩa macro để code C++ nhận biết
-    target_compile_definitions(ggml-cpu PUBLIC USE_FPGA)
-endif()
+  #  target_compile_definitions(ggml-cpu PUBLIC USE_FPGA)
+#endif()
 
